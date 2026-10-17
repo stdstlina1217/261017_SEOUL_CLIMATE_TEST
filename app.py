@@ -1,6 +1,6 @@
 import streamlit as st
 
-# 구버전 Streamlit 호환: st.cache_data가 없으면 st.cache를 사용
+# 구버전 Streamlit 호환 처리
 if not hasattr(st, "cache_data"):
     st.cache_data = st.cache
 
@@ -47,8 +47,41 @@ yearly = (
     .reset_index()
 )
 
-# 5년 이동평균(연도별 평균기온 기준)
+# 5년 이동평균 계산 전에 전체 연도 범위로 확장해서 결측 연도를 NaN으로 만든다
+# (그래프가 끊기게 하기 위한 핵심 처리)
+full_years = pd.RangeIndex(
+    int(yearly["연도"].min()), int(yearly["연도"].max()) + 1
+)
+yearly = (
+    yearly.set_index("연도")
+    .reindex(full_years)
+    .rename_axis("연도")
+    .reset_index()
+)
+
+# 5년 이동평균(연도별 평균기온 기준, 결측 연도는 NaN 유지)
 yearly["5년기온이동평균"] = yearly["연평균기온"].rolling(window=5, min_periods=5).mean()
+
+# 결측(누락) 연도 범위 요약
+missing_ranges = []
+in_missing = False
+for _, row in yearly.iterrows():
+    if pd.isna(row["연평균기온"]):
+        if not in_missing:
+            start = row["연도"]
+            in_missing = True
+    else:
+        if in_missing:
+            missing_ranges.append((start, row["연도"] - 1))
+            in_missing = False
+if in_missing:
+    missing_ranges.append((start, yearly["연도"].max()))
+
+if missing_ranges:
+    st.sidebar.caption(
+        "결측 연도: "
+        + " ~ ".join(f"{s}년~{e}년" for s, e in missing_ranges)
+    )
 
 # ---------- 사이드바: 연도 범위 슬라이더 ----------
 min_year, max_year = int(yearly["연도"].min()), int(yearly["연도"].max())
@@ -62,7 +95,7 @@ sel = yearly[(yearly["연도"] >= year_range[0]) & (yearly["연도"] <= year_ran
 
 # ---------- 본문 ----------
 st.title("서울 연평균 기온 분석")
-st.caption("1950-1953 등 결측값을 제외한 데이터로 분석했습니다.")
+st.caption("결측값은 제외하고 분석했습니다. 그래프의 끊긴 구간이 결측 구간을 나타냅니다.")
 
 # 1·2. 연평균기온 + 5년 이동평균 꺾은선 그래프
 fig = go.Figure()
@@ -73,6 +106,7 @@ fig.add_trace(
         mode="lines+markers",
         name="연평균기온",
         line=dict(color="#1f77b4", width=2),
+        marker=dict(size=3),
     )
 )
 fig.add_trace(
@@ -82,6 +116,7 @@ fig.add_trace(
         mode="lines+markers",
         name="5년 이동평균",
         line=dict(color="#d62728", width=2, dash="dash"),
+        marker=dict(size=3),
     )
 )
 fig.update_layout(
