@@ -1,4 +1,9 @@
 import streamlit as st
+
+# 구버전 Streamlit 호환: st.cache_data가 없으면 st.cache를 사용
+if not hasattr(st, "cache_data"):
+    st.cache_data = st.cache
+
 import pandas as pd
 import plotly.graph_objects as go
 
